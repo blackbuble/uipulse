@@ -14,18 +14,36 @@ return [
     |
     */
 
-    'postmark' => [
-        'key' => env('POSTMARK_API_KEY'),
+    'mailgun' => [
+        'domain' => env('MAILGUN_DOMAIN'),
+        'secret' => env('MAILGUN_SECRET'),
+        'endpoint' => env('MAILGUN_ENDPOINT', 'api.mailgun.net'),
     ],
 
-    'resend' => [
-        'key' => env('RESEND_API_KEY'),
+    'postmark' => [
+        'token' => env('POSTMARK_TOKEN'),
     ],
 
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+    ],
+
+    'ai' => [
+        'default_provider' => env('AI_DEFAULT_PROVIDER', 'openai'),
+        'providers' => [
+            'openai' => [
+                'url' => 'https://api.openai.com/v1',
+                'key' => env('OPENAI_API_KEY'),
+                'model' => env('OPENAI_MODEL', 'gpt-4o'),
+            ],
+            'deepseek' => [
+                'url' => 'https://api.deepseek.com/v1',
+                'key' => env('DEEPSEEK_API_KEY'),
+                'model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+            ],
+        ],
     ],
 
     'slack' => [

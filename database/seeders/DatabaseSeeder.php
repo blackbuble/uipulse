@@ -15,11 +15,35 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $this->call(ShieldSeeder::class);
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        // Create Admin User
+        $admin = \App\Models\User::factory()->create([
+            'name' => 'Admin User',
+            'email' => 'admin@uipulse.ai',
+            'password' => bcrypt('password'),
         ]);
+
+        $admin->assignRole('super_admin');
+
+        // Create sample projects for the admin
+        \App\Models\Project::factory(3)
+            ->for($admin)
+            ->has(
+                \App\Models\Design::factory(5)
+                    ->has(\App\Models\AiAnalysis::factory(2), 'aiAnalyses')
+            )
+            ->create();
+
+        // Create random users with projects
+        \App\Models\User::factory(5)
+            ->has(
+                \App\Models\Project::factory(2)
+                    ->has(
+                        \App\Models\Design::factory(3)
+                            ->has(\App\Models\AiAnalysis::factory(1), 'aiAnalyses')
+                    )
+            )
+            ->create();
     }
 }
