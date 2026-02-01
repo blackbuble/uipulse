@@ -36,6 +36,31 @@ class Design extends Model
         return $this->hasMany(AiAnalysis::class);
     }
 
+    public function components(): HasMany
+    {
+        return $this->hasMany(Component::class);
+    }
+
+    public function accessibilityIssues(): HasMany
+    {
+        return $this->hasMany(AccessibilityIssue::class);
+    }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(DesignComment::class);
+    }
+
+    public function annotations(): HasMany
+    {
+        return $this->hasMany(DesignAnnotation::class);
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(DesignVersion::class);
+    }
+
     public function toSearchableArray(): array
     {
         return [

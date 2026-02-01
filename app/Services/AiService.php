@@ -346,4 +346,140 @@ class AiService
 
         return $data;
     }
+
+    /**
+     * Analyze Figma nodes to detect UI components.
+     */
+    public function analyzeComponents(array $nodes): array
+    {
+        $settings = app(AiSettings::class);
+        $provider = collect($settings->providers)->firstWhere('id', $settings->default_provider);
+
+        if (!$provider) {
+            throw new \Exception("No AI provider configured");
+        }
+
+        $prompt = $this->getComponentDetectionPrompt($nodes);
+
+        Log::info("Starting component detection with AI", [
+            'provider' => $provider['id'],
+            'node_count' => count($nodes),
+        ]);
+
+        if ($provider['id'] === 'gemini') {
+            return $this->detectComponentsWithGemini($nodes, $provider, $prompt);
+        }
+
+        return $this->detectComponentsWithOpenAi($nodes, $provider, $prompt);
+    }
+
+    /**
+     * Get prompt for component detection.
+     */
+    private function getComponentDetectionPrompt(array $nodes): string
+    {
+        $nodesJson = json_encode($nodes, JSON_PRETTY_PRINT);
+
+        return <<<PROMPT
+        Analyze these Figma design nodes and identify UI components.
+        
+        For each component you detect, provide:
+        1. **type**: Component type (button, input, card, modal, select, checkbox, etc.)
+        2. **name**: Descriptive name (e.g., "Primary CTA Button", "Email Input Field")
+        3. **description**: Brief description of the component's purpose
+        4. **properties**: Object containing:
+           - colors: {background, text, border}
+           - typography: {fontFamily, fontSize, fontWeight, lineHeight}
+           - spacing: {padding, margin}
+           - dimensions: {width, height}
+           - borderRadius: number
+           - shadows: array of shadow definitions
+        5. **bounds**: Bounding box {x, y, width, height}
+        6. **node**: The original Figma node data
+        7. **variants**: Array of variants if the component has multiple states (optional)
+           - Each variant should have: name, description, properties, state (default/hover/active/disabled)
+        
+        Focus on detecting:
+        - Interactive elements (buttons, links, inputs, selects)
+        - Layout components (cards, containers, grids)
+        - Navigation elements (menus, tabs, breadcrumbs)
+        - Form elements (inputs, checkboxes, radios, textareas)
+        - Overlay elements (modals, tooltips, popovers)
+        
+        Figma Nodes Data:
+        {$nodesJson}
+        
+        Return a JSON array of detected components. Be thorough and accurate.
+        PROMPT;
+    }
+
+    /**
+     * Detect components using Gemini.
+     */
+    private function detectComponentsWithGemini(array $nodes, array $provider, string $prompt): array
+    {
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$provider['model']}:generateContent?key={$provider['key']}";
+
+        $response = Http::timeout(60)
+            ->post($url, [
+                'contents' => [
+                    [
+                        'parts' => [
+                            ['text' => $prompt]
+                        ]
+                    ]
+                ],
+                'generationConfig' => [
+                    'response_mime_type' => 'application/json'
+                ]
+            ]);
+
+        if ($response->successful()) {
+            $content = $response->json('candidates.0.content.parts.0.text');
+            $components = json_decode($content, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($components)) {
+                return $components;
+            }
+        }
+
+        Log::error("Component detection with Gemini failed", [
+            'response' => $response->body()
+        ]);
+
+        return [];
+    }
+
+    /**
+     * Detect components using OpenAI.
+     */
+    private function detectComponentsWithOpenAi(array $nodes, array $provider, string $prompt): array
+    {
+        $response = Http::withToken($provider['key'])
+            ->timeout(60)
+            ->post($provider['url'] . '/chat/completions', [
+                'model' => $provider['model'],
+                'messages' => [
+                    ['role' => 'system', 'content' => 'You are an expert UI component analyzer. Return only valid JSON.'],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'response_format' => ['type' => 'json_object'],
+                'temperature' => 0.3,
+            ]);
+
+        if ($response->successful()) {
+            $content = $response->json('choices.0.message.content');
+            $data = json_decode($content, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && isset($data['components'])) {
+                return $data['components'];
+            }
+        }
+
+        Log::error("Component detection with OpenAI failed", [
+            'response' => $response->body()
+        ]);
+
+        return [];
+    }
 }
