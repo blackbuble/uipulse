@@ -36,7 +36,7 @@ return [
             'openai' => [
                 'url' => 'https://api.openai.com/v1',
                 'key' => env('OPENAI_API_KEY'),
-                'model' => env('OPENAI_MODEL', 'gpt-4o'),
+                'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
             ],
             'deepseek' => [
                 'url' => 'https://api.deepseek.com/v1',
@@ -44,6 +44,17 @@ return [
                 'model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
             ],
         ],
+    ],
+
+    'figma' => [
+        'token' => env('FIGMA_ACCESS_TOKEN'),
+        'webhook_secret' => env('FIGMA_WEBHOOK_SECRET'),
+    ],
+
+    'github' => [
+        'token' => env('GITHUB_TOKEN'),
+        'client_id' => env('GITHUB_CLIENT_ID'),
+        'client_secret' => env('GITHUB_CLIENT_SECRET'),
     ],
 
     'slack' => [

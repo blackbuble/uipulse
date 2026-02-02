@@ -45,10 +45,30 @@ class DesignVersionResource extends Resource
 
                 Forms\Components\Section::make('Snapshot Data')
                     ->schema([
-                        Forms\Components\KeyValue::make('snapshot')
+                        Forms\Components\Placeholder::make('snapshot_display')
                             ->label('Design Snapshot')
-                            ->disabled()
+                            ->content(function ($record) {
+                                if (!$record || !$record->snapshot) {
+                                    return 'No snapshot data available';
+                                }
+                                return view('filament.forms.components.json-display', [
+                                    'data' => $record->snapshot
+                                ]);
+                            })
                             ->columnSpanFull(),
+
+                        Forms\Components\Placeholder::make('metadata_display')
+                            ->label('Metadata Snapshot')
+                            ->content(function ($record) {
+                                if (!$record || !$record->metadata_snapshot) {
+                                    return 'No metadata snapshot available';
+                                }
+                                return view('filament.forms.components.json-display', [
+                                    'data' => $record->metadata_snapshot
+                                ]);
+                            })
+                            ->columnSpanFull()
+                            ->visible(fn($record) => !empty($record?->metadata_snapshot)),
                     ])
                     ->collapsed(),
             ]);

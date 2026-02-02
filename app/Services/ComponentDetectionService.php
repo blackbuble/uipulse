@@ -22,16 +22,18 @@ class ComponentDetectionService
         Log::info("Starting component detection for design: {$design->id}");
 
         try {
-            // 1. Get design nodes from Figma
-            $nodes = $this->getFigmaNodes($design);
+            // 1. Get all pages/frames from Figma
+            $allNodes = $this->getAllFigmaNodes($design);
 
-            if (empty($nodes)) {
+            if (empty($allNodes)) {
                 Log::warning("No Figma nodes found for design: {$design->id}");
                 return [];
             }
 
-            // 2. Analyze with AI
-            $detectedComponents = $this->aiService->analyzeComponents($nodes);
+            Log::info("Found " . count($allNodes) . " pages/frames to analyze");
+
+            // 2. Analyze with AI (batch processing for multiple pages)
+            $detectedComponents = $this->aiService->analyzeComponents($allNodes);
 
             // 3. Save to database
             $components = [];
@@ -45,10 +47,10 @@ class ComponentDetectionService
                 }
             }
 
-            // 4. Group similar components
+            // 4. Group similar components across all pages
             $this->groupSimilarComponents($components);
 
-            Log::info("Component detection completed. Found " . count($components) . " components");
+            Log::info("Component detection completed. Found " . count($components) . " components across all pages");
 
             return $components;
         } catch (\Exception $e) {
@@ -58,17 +60,132 @@ class ComponentDetectionService
     }
 
     /**
-     * Get Figma nodes from design.
+     * Get all Figma nodes from all pages/frames in the file.
      */
-    private function getFigmaNodes(Design $design): array
+    private function getAllFigmaNodes(Design $design): array
     {
-        if (!$design->figma_file_key || !$design->figma_node_id) {
+        if (!$design->figma_file_key) {
+            return $design->metadata['nodes'] ?? [];
+        }
+
+        $figmaToken = config('services.figma.token');
+
+        if (!$figmaToken) {
+            Log::warning("Figma token not configured, using metadata");
+            return $design->metadata['nodes'] ?? [];
+        }
+
+        try {
+            // Get file structure from Figma API with optimized parameters
+            $response = Http::withHeaders([
+                'X-Figma-Token' => $figmaToken
+            ])
+                ->timeout(30)
+                ->get("https://api.figma.com/v1/files/{$design->figma_file_key}", [
+                    'depth' => 4,  // Increased depth to capture frames and their children
+                    'geometry' => 'paths',  // Only get paths, not full geometry
+                ]);
+
+            if (!$response->successful()) {
+                Log::error("Figma API request failed: " . $response->body());
+                return $design->metadata['nodes'] ?? [];
+            }
+
+            $fileData = $response->json();
+            $allNodes = [];
+
+            // Extract nodes from all pages
+            if (isset($fileData['document']['children'])) {
+                foreach ($fileData['document']['children'] as $page) {
+                    if ($page['type'] === 'CANVAS') {
+                        Log::info("Processing page: {$page['name']}");
+
+                        // Get all frames/components in this page
+                        if (isset($page['children'])) {
+                            foreach ($page['children'] as $frame) {
+                                $allNodes[] = [
+                                    'page' => $page['name'],
+                                    'frame' => $frame['name'],
+                                    'node' => $frame,
+                                    'children' => $this->extractChildNodes($frame),
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If specific node_id is provided, filter to that node
+            if ($design->figma_node_id && !empty($allNodes)) {
+                $nodeId = str_replace('-', ':', $design->figma_node_id);
+                $allNodes = array_filter($allNodes, function ($item) use ($nodeId) {
+                    return isset($item['node']['id']) && $item['node']['id'] === $nodeId;
+                });
+            }
+
+            Log::info("Extracted " . count($allNodes) . " frames from Figma file");
+
+            return array_values($allNodes);
+        } catch (\Exception $e) {
+            Log::error("Failed to fetch Figma nodes: " . $e->getMessage());
+            return $design->metadata['nodes'] ?? [];
+        }
+    }
+
+    /**
+     * Recursively extract child nodes from a frame.
+     */
+    private function extractChildNodes(array $node, int $depth = 0, int $maxDepth = 5): array
+    {
+        if ($depth >= $maxDepth || !isset($node['children'])) {
             return [];
         }
 
-        // This would integrate with Figma API
-        // For now, return mock data or use existing metadata
-        return $design->metadata['nodes'] ?? [];
+        $children = [];
+        foreach ($node['children'] as $child) {
+            $children[] = [
+                'id' => $child['id'] ?? null,
+                'name' => $child['name'] ?? 'Unnamed',
+                'type' => $child['type'] ?? 'UNKNOWN',
+                'bounds' => $child['absoluteBoundingBox'] ?? null,
+                'properties' => $this->extractNodeProperties($child),
+                'children' => $this->extractChildNodes($child, $depth + 1, $maxDepth),
+            ];
+        }
+
+        return $children;
+    }
+
+    /**
+     * Extract relevant properties from a Figma node.
+     */
+    private function extractNodeProperties(array $node): array
+    {
+        return [
+            'visible' => $node['visible'] ?? true,
+            'opacity' => $node['opacity'] ?? 1,
+            'fills' => $node['fills'] ?? [],
+            'strokes' => $node['strokes'] ?? [],
+            'effects' => $node['effects'] ?? [],
+            'cornerRadius' => $node['cornerRadius'] ?? null,
+            'constraints' => $node['constraints'] ?? null,
+            'layoutMode' => $node['layoutMode'] ?? null,
+            'primaryAxisSizingMode' => $node['primaryAxisSizingMode'] ?? null,
+            'counterAxisSizingMode' => $node['counterAxisSizingMode'] ?? null,
+            'paddingLeft' => $node['paddingLeft'] ?? null,
+            'paddingRight' => $node['paddingRight'] ?? null,
+            'paddingTop' => $node['paddingTop'] ?? null,
+            'paddingBottom' => $node['paddingBottom'] ?? null,
+            'itemSpacing' => $node['itemSpacing'] ?? null,
+        ];
+    }
+
+    /**
+     * Get Figma nodes from design (legacy method for backward compatibility).
+     */
+    private function getFigmaNodes(Design $design): array
+    {
+        return $this->getAllFigmaNodes($design);
     }
 
     /**
@@ -127,7 +244,7 @@ class ComponentDetectionService
     }
 
     /**
-     * Group similar components together.
+     * Group similar components together (across all pages).
      */
     private function groupSimilarComponents(array $components): void
     {
@@ -147,8 +264,17 @@ class ComponentDetectionService
         // Update usage count for similar components
         foreach ($groups as $group) {
             if (count($group) > 1) {
-                foreach ($group as $component) {
-                    $component->update(['usage_count' => count($group)]);
+                // Mark the first one as the primary/library version
+                $group[0]->update([
+                    'usage_count' => count($group),
+                    'in_library' => true,
+                ]);
+
+                // Update others as instances
+                for ($i = 1; $i < count($group); $i++) {
+                    $group[$i]->update([
+                        'usage_count' => count($group),
+                    ]);
                 }
             }
         }
@@ -193,6 +319,10 @@ class ComponentDetectionService
 
         if (str_contains($name, 'modal') || str_contains($name, 'dialog')) {
             return 'modal';
+        }
+
+        if (str_contains($name, 'nav') || str_contains($name, 'menu')) {
+            return 'navigation';
         }
 
         // Fallback to Figma node type

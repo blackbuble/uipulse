@@ -23,7 +23,7 @@ class ProjectPolicy
      */
     public function view(User $user, Project $project): bool
     {
-        return $user->can('view_project') && ($user->hasRole('super_admin') || $project->user_id === $user->id);
+        return $user->can('view_project');
     }
 
     /**
@@ -39,7 +39,7 @@ class ProjectPolicy
      */
     public function update(User $user, Project $project): bool
     {
-        return $user->can('update_project') && ($user->hasRole('super_admin') || $project->user_id === $user->id);
+        return $user->can('update_project');
     }
 
     /**
@@ -47,7 +47,7 @@ class ProjectPolicy
      */
     public function delete(User $user, Project $project): bool
     {
-        return $user->can('delete_project') && ($user->hasRole('super_admin') || $project->user_id === $user->id);
+        return $user->can('delete_project');
     }
 
     /**

@@ -23,7 +23,7 @@ class DesignPolicy
      */
     public function view(User $user, Design $design): bool
     {
-        return $user->can('view_design') && ($user->hasRole('super_admin') || $design->project->user_id === $user->id);
+        return $user->can('view_design');
     }
 
     /**
@@ -39,7 +39,7 @@ class DesignPolicy
      */
     public function update(User $user, Design $design): bool
     {
-        return $user->can('update_design') && ($user->hasRole('super_admin') || $design->project->user_id === $user->id);
+        return $user->can('update_design');
     }
 
     /**
@@ -47,7 +47,7 @@ class DesignPolicy
      */
     public function delete(User $user, Design $design): bool
     {
-        return $user->can('delete_design') && ($user->hasRole('super_admin') || $design->project->user_id === $user->id);
+        return $user->can('delete_design');
     }
 
     /**

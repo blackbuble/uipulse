@@ -378,38 +378,43 @@ class AiService
      */
     private function getComponentDetectionPrompt(array $nodes): string
     {
-        $nodesJson = json_encode($nodes, JSON_PRETTY_PRINT);
+        // Minimal summary to stay within token limits
+        $summarizedNodes = array_map(function ($nodeData) {
+            $children = array_map(function ($child) {
+                return $child['name'] ?? 'Unnamed';
+            }, array_slice($nodeData['children'] ?? [], 0, 5)); // Only first 5 child names
+
+            return [
+                'page' => $nodeData['page'] ?? 'Unknown',
+                'frame' => $nodeData['frame'] ?? 'Unknown',
+                'type' => $nodeData['node']['type'] ?? 'FRAME',
+                'children' => $children,
+                'children_count' => count($nodeData['children'] ?? []),
+            ];
+        }, $nodes);
+
+        $nodesJson = json_encode($summarizedNodes, JSON_PRETTY_PRINT);
 
         return <<<PROMPT
-        Analyze these Figma design nodes and identify UI components.
+        Analyze these Figma frames and identify common UI components based on naming patterns.
         
-        For each component you detect, provide:
-        1. **type**: Component type (button, input, card, modal, select, checkbox, etc.)
-        2. **name**: Descriptive name (e.g., "Primary CTA Button", "Email Input Field")
-        3. **description**: Brief description of the component's purpose
-        4. **properties**: Object containing:
-           - colors: {background, text, border}
-           - typography: {fontFamily, fontSize, fontWeight, lineHeight}
-           - spacing: {padding, margin}
-           - dimensions: {width, height}
-           - borderRadius: number
-           - shadows: array of shadow definitions
-        5. **bounds**: Bounding box {x, y, width, height}
-        6. **node**: The original Figma node data
-        7. **variants**: Array of variants if the component has multiple states (optional)
-           - Each variant should have: name, description, properties, state (default/hover/active/disabled)
+        For each component type you identify, provide:
+        - **type**: Component type (button, input, card, navigation, form, etc.)
+        - **name**: Descriptive name based on the frame/element names
+        - **description**: Brief description
+        - **properties**: Basic properties object (can be minimal)
         
-        Focus on detecting:
-        - Interactive elements (buttons, links, inputs, selects)
-        - Layout components (cards, containers, grids)
-        - Navigation elements (menus, tabs, breadcrumbs)
-        - Form elements (inputs, checkboxes, radios, textareas)
-        - Overlay elements (modals, tooltips, popovers)
-        
-        Figma Nodes Data:
+        Figma Frames:
         {$nodesJson}
         
-        Return a JSON array of detected components. Be thorough and accurate.
+        Return JSON:
+        {
+          "components": [
+            {"type": "button", "name": "Primary Button", "description": "Main CTA", "properties": {}}
+          ]
+        }
+        
+        Identify 3-10 common component types based on the naming patterns.
         PROMPT;
     }
 
@@ -471,9 +476,11 @@ class AiService
             $content = $response->json('choices.0.message.content');
             $data = json_decode($content, true);
 
-            if (json_last_error() === JSON_ERROR_NONE && isset($data['components'])) {
-                return $data['components'];
-            }
+            Log::info("Component detection with OpenAI completed", [
+                'components_found' => count($data['components'] ?? []),
+            ]);
+
+            return $data['components'] ?? [];
         }
 
         Log::error("Component detection with OpenAI failed", [

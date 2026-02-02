@@ -11,6 +11,7 @@ class AiAnalysis extends Model
 
     protected $fillable = [
         'design_id',
+        'component_id',
         'type',
         'provider',
         'model_name',
@@ -26,5 +27,13 @@ class AiAnalysis extends Model
     public function design(): BelongsTo
     {
         return $this->belongsTo(Design::class);
+    }
+
+    /**
+     * Get the component this analysis belongs to.
+     */
+    public function component(): BelongsTo
+    {
+        return $this->belongsTo(Component::class);
     }
 }

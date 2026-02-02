@@ -112,6 +112,11 @@ class DesignResource extends Resource
                 Tables\Columns\TextColumn::make('ai_analyses_count')
                     ->counts('aiAnalyses')
                     ->label('Analyses'),
+                Tables\Columns\TextColumn::make('components_count')
+                    ->counts('components')
+                    ->label('Components')
+                    ->badge()
+                    ->color('success'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -242,6 +247,34 @@ class DesignResource extends Resource
 
                         return redirect(\App\Filament\Resources\AiAnalysisResource::getUrl('index'));
                     }),
+
+                Tables\Actions\Action::make('detect_components')
+                    ->label('Detect Components')
+                    ->icon('heroicon-o-squares-2x2')
+                    ->color('info')
+                    ->action(function (Design $record) {
+                        \App\Jobs\DetectComponentsJob::dispatch($record);
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('Component Detection Started')
+                            ->body('AI is analyzing the design to detect components')
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn(Design $record) => $record->status === 'completed'),
+
+                Tables\Actions\Action::make('view_components')
+                    ->label('View Components')
+                    ->icon('heroicon-o-cube')
+                    ->color('success')
+                    ->url(fn(Design $record) => \App\Filament\Resources\ComponentResource::getUrl('index', [
+                        'tableFilters' => [
+                            'design_id' => ['value' => $record->id],
+                        ],
+                    ]))
+                    ->visible(fn(Design $record) => $record->components()->count() > 0)
+                    ->badge(fn(Design $record) => $record->components()->count()),
+
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
@@ -255,7 +288,7 @@ class DesignResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\ComponentsRelationManager::class,
         ];
     }
 

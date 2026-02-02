@@ -180,138 +180,158 @@ class ComponentResource extends Resource
                     ->falseLabel('Not in library'),
             ])
             ->actions([
-                Tables\Actions\Action::make('add_to_library')
-                    ->icon('heroicon-o-bookmark')
-                    ->color('success')
-                    ->visible(fn($record) => !$record->is_in_library)
-                    ->action(function ($record) {
-                        $record->addToLibrary();
-
-                        Notification::make()
-                            ->title('Added to Library')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('remove_from_library')
-                    ->icon('heroicon-o-bookmark-slash')
-                    ->color('danger')
-                    ->visible(fn($record) => $record->is_in_library)
-                    ->requiresConfirmation()
-                    ->action(function ($record) {
-                        $record->removeFromLibrary();
-
-                        Notification::make()
-                            ->title('Removed from Library')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('generate_code')
-                    ->icon('heroicon-o-code-bracket')
-                    ->color('primary')
-                    ->modalHeading('Generate Component Code')
-                    ->modalDescription('Generate production-ready code for this component')
-                    ->modalSubmitActionLabel('Generate')
-                    ->form([
-                        Forms\Components\Select::make('framework')
-                            ->label('Framework')
-                            ->options([
-                                'react' => 'React + TypeScript',
-                                'vue' => 'Vue 3 + TypeScript',
-                                'html' => 'HTML + Tailwind CSS',
-                            ])
-                            ->default('react')
-                            ->required(),
-                    ])
-                    ->action(function ($record, array $data) {
-                        $service = app(\App\Services\CodeGenerationService::class);
-
-                        try {
-                            $result = $service->generateCode($record, $data['framework']);
-
-                            // Copy to clipboard (would need JS integration)
-                            Notification::make()
-                                ->title('Code Generated!')
-                                ->body("Generated {$result['filename']} - Copy the code below")
-                                ->success()
-                                ->duration(10000)
-                                ->send();
-
-                            // In production, show code in modal or download file
-            
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title('Generation Failed')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                Tables\Actions\Action::make('create_pr')
-                    ->icon('heroicon-o-code-bracket-square')
-                    ->color('success')
-                    ->modalHeading('Create GitHub Pull Request')
-                    ->modalDescription('Push this component to a GitHub repository')
-                    ->form([
-                        Forms\Components\Select::make('repository')
-                            ->label('Repository')
-                            ->options(function () {
-                                try {
-                                    $service = app(\App\Services\GitHubIntegrationService::class);
-                                    $repos = $service->listRepositories();
-                                    return collect($repos)->pluck('name', 'name');
-                                } catch (\Exception $e) {
-                                    return [];
-                                }
-                            })
-                            ->searchable()
-                            ->required(),
-
-                        Forms\Components\Select::make('branch')
-                            ->label('Base Branch')
-                            ->options(['main' => 'main', 'master' => 'master', 'develop' => 'develop'])
-                            ->default('main')
-                            ->required(),
-
-                        Forms\Components\Select::make('framework')
-                            ->label('Framework')
-                            ->options([
-                                'react' => 'React + TypeScript',
-                                'vue' => 'Vue 3 + TypeScript',
-                                'html' => 'HTML + Tailwind CSS',
-                            ])
-                            ->default('react')
-                            ->required(),
-                    ])
-                    ->action(function ($record, array $data) {
-                        try {
-                            \App\Jobs\CreateComponentPRJob::dispatch(
-                                $record,
-                                $data['repository'],
-                                $data['branch'],
-                                $data['framework']
-                            );
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('add_to_library')
+                        ->icon('heroicon-o-bookmark-square')
+                        ->color('success')
+                        ->visible(fn($record) => !$record->is_in_library)
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->addToLibrary();
 
                             Notification::make()
-                                ->title('PR Creation Started')
-                                ->body('GitHub pull request is being created in the background')
+                                ->title('Added to Library')
                                 ->success()
                                 ->send();
+                        }),
 
-                        } catch (\Exception $e) {
+                    Tables\Actions\Action::make('remove_from_library')
+                        ->icon('heroicon-o-bookmark-slash')
+                        ->color('danger')
+                        ->visible(fn($record) => $record->is_in_library)
+                        ->requiresConfirmation()
+                        ->action(function ($record) {
+                            $record->removeFromLibrary();
+
                             Notification::make()
-                                ->title('PR Creation Failed')
-                                ->body($e->getMessage())
-                                ->danger()
+                                ->title('Removed from Library')
+                                ->success()
                                 ->send();
-                        }
-                    }),
+                        }),
 
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                    Tables\Actions\Action::make('generate_code')
+                        ->icon('heroicon-o-code-bracket')
+                        ->color('primary')
+                        ->modalHeading('Generate Component Code')
+                        ->modalDescription('Generate production-ready code for this component')
+                        ->modalSubmitActionLabel('Generate')
+                        ->form([
+                            Forms\Components\Select::make('framework')
+                                ->label('Framework')
+                                ->options([
+                                    'react' => 'React + TypeScript',
+                                    'vue' => 'Vue 3 + TypeScript',
+                                    'html' => 'HTML + Tailwind CSS',
+                                ])
+                                ->default('react')
+                                ->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            $service = app(\App\Services\CodeGenerationService::class);
+
+                            try {
+                                $result = $service->generateCode($record, $data['framework']);
+
+                                // Save to AI Analyses table so it can be viewed later
+                                $record->aiAnalyses()->create([
+                                    'design_id' => $record->design_id,
+                                    'organization_id' => $record->organization_id,
+                                    'type' => 'component_code_gen',
+                                    'provider' => 'template',
+                                    'model_name' => $data['framework'],
+                                    'prompt_tokens' => 0,
+                                    'completion_tokens' => strlen($result['code']),
+                                    'total_tokens' => 0,
+                                    'results' => [
+                                        'framework' => $data['framework'],
+                                        'filename' => $result['filename'],
+                                        'code' => $result['code'],
+                                        'summary' => "Generated {$data['framework']} code using template generator.",
+                                    ],
+                                    'status' => 'completed',
+                                    'completed_at' => now(),
+                                ]);
+
+                                Notification::make()
+                                    ->title('Code Generated!')
+                                    ->body("Generated {$result['filename']}. You can view it in AI Results.")
+                                    ->success()
+                                    ->duration(5000)
+                                    ->send();
+
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('Generation Failed')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->send();
+                            }
+                        }),
+
+                    Tables\Actions\Action::make('create_pr')
+                        ->icon('heroicon-o-code-bracket-square')
+                        ->color('success')
+                        ->modalHeading('Create GitHub Pull Request')
+                        ->modalDescription('Push this component to a GitHub repository')
+                        ->form([
+                            Forms\Components\Select::make('repository')
+                                ->label('Repository')
+                                ->options(function () {
+                                    try {
+                                        $service = app(\App\Services\GitHubIntegrationService::class);
+                                        $repos = $service->listRepositories();
+                                        return collect($repos)->pluck('name', 'name');
+                                    } catch (\Exception $e) {
+                                        return [];
+                                    }
+                                })
+                                ->searchable()
+                                ->required(),
+
+                            Forms\Components\Select::make('branch')
+                                ->label('Base Branch')
+                                ->options(['main' => 'main', 'master' => 'master', 'develop' => 'develop'])
+                                ->default('main')
+                                ->required(),
+
+                            Forms\Components\Select::make('framework')
+                                ->label('Framework')
+                                ->options([
+                                    'react' => 'React + TypeScript',
+                                    'vue' => 'Vue 3 + TypeScript',
+                                    'html' => 'HTML + Tailwind CSS',
+                                ])
+                                ->default('react')
+                                ->required(),
+                        ])
+                        ->action(function ($record, array $data) {
+                            try {
+                                \App\Jobs\CreateComponentPRJob::dispatch(
+                                    $record,
+                                    $data['repository'],
+                                    $data['branch'],
+                                    $data['framework']
+                                );
+
+                                Notification::make()
+                                    ->title('PR Creation Started')
+                                    ->body('GitHub pull request is being created in the background')
+                                    ->success()
+                                    ->send();
+
+                            } catch (\Exception $e) {
+                                Notification::make()
+                                    ->title('PR Creation Failed')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->send();
+                            }
+                        }),
+
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ])
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
